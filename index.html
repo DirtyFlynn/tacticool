@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>部落任务派遣助手</title>
+  <style>
+    :root{
+      --bg:#0b0f17; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --line:#1f2937;
+      --btn:#2563eb; --btn2:#334155; --good:#22c55e; --warn:#f59e0b;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+      background:linear-gradient(180deg,#070a10 0%, #0b0f17 60%, #070a10 100%);
+      color:var(--text);
+    }
+    .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+    h1{font-size:20px;margin:0 0 8px}
+    .sub{color:var(--muted);font-size:13px;line-height:1.65;margin:0 0 16px}
+    .grid{display:grid;gap:12px}
+    @media(min-width:980px){.grid{grid-template-columns: 1.1fr 1fr}}
+    .card{background:rgba(17,24,39,.92);border:1px solid var(--line);border-radius:14px;padding:14px 14px 16px}
+    .card h2{font-size:14px;margin:0 0 10px}
+    .small{font-size:11px;color:var(--muted);line-height:1.6}
+    textarea{
+      width:100%;min-height:110px;resize:vertical;border-radius:12px;border:1px solid var(--line);
+      background:#0b1220;color:var(--text);padding:10px;font-size:12px;line-height:1.5
+    }
+    select{
+      border-radius:12px;border:1px solid var(--line);background:#0b1220;color:var(--text);
+      padding:8px 10px;font-size:12px;outline:none;width:100%;
+    }
+    .slot{
+      display:grid;grid-template-columns: 120px 1fr;gap:10px;align-items:center;
+      padding:8px 0;border-bottom:1px dashed rgba(148,163,184,.2)
+    }
+    .slot:last-child{border-bottom:none}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .tag{
+      display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+      border:1px solid rgba(148,163,184,.25);color:var(--muted)
+    }
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .btn{cursor:pointer;border:none;border-radius:12px;padding:9px 12px;font-size:12px;color:white;background:var(--btn)}
+    .btn.secondary{background:var(--btn2)}
+    .btn:active{transform:translateY(1px)}
+    table{
+      width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border-radius:12px;border:1px solid var(--line)
+    }
+    th,td{padding:10px 10px;font-size:12px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{background:#0b1220;text-align:left;color:var(--muted);font-weight:600}
+    tr:last-child td{border-bottom:none}
+    .ok{color:var(--good)}
+    .warn{color:var(--warn)}
+    details{
+      border:1px solid rgba(148,163,184,.18);border-radius:12px;padding:8px 10px;background:rgba(11,18,32,.35)
+    }
+    summary{cursor:pointer;color:var(--muted);font-size:12px}
+    .hr{height:1px;background:var(--line);margin:10px 0}
+    .footer{margin-top:12px;color:rgba(148,163,184,.75);font-size:12px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>部落任务派遣助手——制作人༺杀༻China NO.1阿鸡 ༺杀༻DirtyFlynn</h1>
+  <p class="sub">
+    规则：每个任务的“推荐干员”就是你给的表格那一整列（从上到下）。按优先级 <b>7→1</b> 依次处理：<br/>
+    - 高优先任务先拿走整列（若你自定义了“拥有干员”，则只取你拥有的那部分）<br/>
+    - 低优先任务从自己的整列中 <b>删除已被更高优先占用的人</b>，剩下的人才派遣<br/>
+    - 只要本轮包含 <span class="tag mono">BASIC</span>：它永远显示在最下面，并把 <b>剩余全员</b> 全塞进 BASIC
+  </p>
+
+  <div class="grid">
+    <!-- LEFT -->
+    <div class="card">
+      <h2>① 你的干员池（可选）</h2>
+      <p class="small">
+        不填＝默认你拥有表格里出现过的所有干员。<br/>
+        需要精确到“你实际拥有的干员”时，每行一个名字（大小写无所谓，会自动转大写；例如：<span class="mono">CHEN LI</span>）
+      </p>
+      <textarea id="roster" placeholder="（可留空）每行一个干员名，例如：
+TRAVIS
+BORIS
+CHEN LI
+..."></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn secondary" id="useDefault">使用默认全员（清空自定义）</button>
+        <button class="btn secondary" id="fillDefault">把默认全员写入文本框</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <h2>② 选择本轮出现的 7 个任务（第 7 任优先级最高）</h2>
+      <div id="slots"></div>
+
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="run">生成派遣名单</button>
+        <button class="btn secondary" id="clear">清空选择</button>
+      </div>
+      <p class="small" id="note" style="margin-top:10px"></p>
+
+      <div class="footer mono">制作人：༺杀༻China NO.1阿鸡 以及 ༺杀༻DirtyFlynn</div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="card">
+      <h2>③ 输出：每任务最终派遣名单（已去重）</h2>
+      <div class="row" style="margin-bottom:10px">
+        <button class="btn secondary" id="copy">复制结果</button>
+      </div>
+
+      <div id="out"></div>
+      <div id="extraOut" style="margin-top:12px"></div>
+      <div id="debug" style="margin-top:12px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== 任务列表 =====
+  const TASKS = [
+    "RECON","LOGISTICS","CLEANUP","BREACH","COVER","SHOWDOWN","LOCALS","B.S.S.","HILDR",
+    "COMMON","UNCOMMON","RARE ONLY","BAYONET","HAMMER","KNIFE","BASIC"
+  ];
+
+  // ===== 你的表格：每任务对应“整列推荐干员”（按上到下顺序）=====
+  const PREF = {
+    "RECON":      ["TRAVIS","KALUS","SPENCER","HAWK","MIA","RAY","SNEK","APOLLON","WHISPER","CHARON"],
+    "LOGISTICS":  ["BORIS","SHI","VICTOR","JASON","MIRO","CHEN LI","APOLLON","PHOENIX","FERRY"],
+    "CLEANUP":    ["LENS","THOR","JOE","MCMEAN","MIA","MIRO","SNEK","JB","DIANA"],
+    "BREACH":     ["VICTOR","SYNDROME","DAVID","ZLOY","DMITRY","CRAIG","DUTCH","FERRY","MOSES"],
+    "COVER":      ["RICK","TRAVIS","VALERA","HAWK","JOE","RAY","DUTCH","JB","PHOENIX"],
+    "SHOWDOWN":   ["MISHKA","BATYA","CAPISCE","VALERA","ZLOY","KIRIN","CHARON"],
+    "LOCALS":     ["MISHKA","BATYA","SYNDROME","CAPISCE","HAWK","JOE","MIRO","KIRIN"],
+    "B.S.S.":     ["LENS","JASON","SPENCER","DAVID","DIANA","MOSES"],
+    "HILDR":      ["JASON","VARG","THOR","WHISPER"],
+    "COMMON":     ["MISHKA","ROOKIE","LENS","RICK","OWEN"],
+    "UNCOMMON":   ["BATYA","TRAVIS","BORIS","SHI","VICTOR","KALUS","HAWK"],
+    "RARE ONLY":  ["SYNDROME","CAPISCE","OWEN","JASON","SPENCER","THOR","VALERA","JOE","VARG","DAVID","MCMEAN","MIA"],
+    "BAYONET":    ["LENS","TRAVIS","JASON","SPENCER","THOR","VALERA","CHEN LI","CRAIG"],
+    "HAMMER":     ["RICK","BORIS","SHI","VICTOR","KALUS","SYNDROME","CAPISCE","MCMEAN"],
+    "KNIFE":      ["RICK","BORIS","SHI","KALUS","OWEN","VARG","DAVID","MCMEAN","DMITRY","CHARON"],
+    "BASIC":      []
+  };
+
+  // 默认全员：表格里出现过的所有干员去重
+  const DEFAULT_ROSTER = (() => {
+    const s = new Set();
+    Object.values(PREF).forEach(arr => arr.forEach(x => x && s.add(x)));
+    s.delete("");
+    return Array.from(s).sort((a,b)=>a.localeCompare(b));
+  })();
+
+  // ===== UI：7 槽位 =====
+  const slotsDiv = document.getElementById("slots");
+
+  function makeSelect(id){
+    const sel = document.createElement("select");
+    sel.id = id;
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "（未选择）";
+    sel.appendChild(empty);
+    TASKS.forEach(t=>{
+      const opt = document.createElement("option");
+      opt.value = t;
+      opt.textContent = t;
+      sel.appendChild(opt);
+    });
+    return sel;
+  }
+
+  function renderSlots(){
+    slotsDiv.innerHTML = "";
+    for(let p=7;p>=1;p--){
+      const row = document.createElement("div");
+      row.className = "slot";
+      const left = document.createElement("div");
+      left.innerHTML = `<div class="mono">第 ${p} 任</div><div class="small">优先级：${p}</div>`;
+      const sel = makeSelect(`slot_${p}`);
+      sel.addEventListener("change", syncNoDuplicate);
+      row.appendChild(left);
+      row.appendChild(sel);
+      slotsDiv.appendChild(row);
+    }
+  }
+
+  // 禁止同一任务重复选择
+  function syncNoDuplicate(){
+    const chosen = new Set();
+    for(let p=7;p>=1;p--){
+      const v = document.getElementById(`slot_${p}`).value;
+      if(v) chosen.add(v);
+    }
+    for(let p=7;p>=1;p--){
+      const sel = document.getElementById(`slot_${p}`);
+      const cur = sel.value;
+      Array.from(sel.options).forEach(opt=>{
+        if(!opt.value) return;
+        opt.disabled = (opt.value !== cur) && chosen.has(opt.value);
+      });
+    }
+    saveState();
+  }
+
+  // ===== roster =====
+  function parseRoster(){
+    const raw = document.getElementById("roster").value.trim();
+    if(!raw) return DEFAULT_ROSTER.slice();
+    const lines = raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    const uniq = [];
+    const seen = new Set();
+    for(const line of lines){
+      const name = line.toUpperCase().replace(/\s+/g," ").trim();
+      if(!name) continue;
+      if(!seen.has(name)){
+        seen.add(name);
+        uniq.push(name);
+      }
+    }
+    return uniq;
+  }
+
+  // ===== 核心：按 7→1 “整列去重派遣”；BASIC 永远最后显示并吃剩余 =====
+  function compute(){
+    const roster = parseRoster();
+    const rosterSet = new Set(roster);
+
+    // 读取任务（7→1）
+    let picked = [];
+    for(let p=7;p>=1;p--){
+      const t = document.getElementById(`slot_${p}`).value;
+      if(t) picked.push({priority:p, task:t});
+    }
+
+    // BASIC 处理：永远最后（显示/处理都最后）
+    const hasBasic = picked.some(x=>x.task==="BASIC");
+    const tasks = picked
+      .filter(x=>x.task!=="BASIC")
+      .sort((a,b)=>b.priority-a.priority);
+
+    const used = new Set();
+    const results = [];
+
+    // 非 BASIC 依次占用整列
+    for(const item of tasks){
+      const t = item.task;
+      const col = (PREF[t] || []).filter(name => rosterSet.has(name));
+      const finalList = col.filter(name => !used.has(name));
+      finalList.forEach(x => used.add(x));
+
+      results.push({
+        priority: item.priority,
+        task: t,
+        finalList
+      });
+    }
+
+    // 剩余全员（无论是否有 BASIC 都计算出来）
+    const remainingList = roster.filter(n => !used.has(n));
+
+    // BASIC：如果本轮有 BASIC，则最终派遣 = 剩余全员
+    const basicList = hasBasic ? remainingList.slice() : [];
+
+    return {results, hasBasic, basicList, remainingList, roster, used, tasks};
+  }
+
+  // ===== 渲染 =====
+  function render(){
+    const {results, hasBasic, basicList, remainingList, roster, used, tasks} = compute();
+
+    const out = document.getElementById("out");
+    const extraOut = document.getElementById("extraOut");
+    const debug = document.getElementById("debug");
+    const note = document.getElementById("note");
+
+    const chosenCount = Array.from({length:7},(_,i)=>document.getElementById(`slot_${7-i}`).value).filter(Boolean).length;
+    note.innerHTML = `已选择任务：<span class="mono">${chosenCount}</span> / 7。干员池：<span class="mono">${roster.length}</span> 人。`;
+
+    let html = `<table>
+      <thead><tr>
+        <th style="width:90px">优先级</th>
+        <th style="width:160px">任务</th>
+        <th>最终派遣名单（整列去重后）</th>
+        <th style="width:120px">人数</th>
+      </tr></thead><tbody>`;
+
+    if(results.length===0 && !hasBasic){
+      html += `<tr><td colspan="4" class="small">还没有选择任务。左侧选好本轮 7 个任务后点「生成派遣名单」。</td></tr>`;
+    } else {
+      for(const r of results){
+        const listStr = r.finalList.length ? r.finalList.join(", ") : "（被更高优先抢光 / 或你不拥有该列干员）";
+        html += `<tr>
+          <td class="mono"><span class="tag">${r.priority}</span></td>
+          <td class="mono">${r.task}</td>
+          <td class="mono">${listStr}</td>
+          <td class="mono ${r.finalList.length? "ok":"warn"}">${r.finalList.length}</td>
+        </tr>`;
+      }
+
+      // ✅ 改动 1：只要选了 BASIC，永远放在表格最后一行显示
+      if(hasBasic){
+        html += `<tr>
+          <td class="mono"><span class="tag">BASIC</span></td>
+          <td class="mono">BASIC</td>
+          <td class="mono">${basicList.length ? basicList.join(", ") : "（没有剩余干员）"}</td>
+          <td class="mono ${basicList.length? "ok":"warn"}">${basicList.length}</td>
+        </tr>`;
+      }
+    }
+
+    html += `</tbody></table>`;
+    out.innerHTML = html;
+
+    // ✅ 改动 2：当没有 BASIC 时，也显示“剩余干员是谁”
+    if(!hasBasic){
+      extraOut.innerHTML = `
+        <details>
+          <summary>剩余干员（未被占用）：共 ${remainingList.length} 人（点击展开）</summary>
+          <div class="small" style="margin-top:8px">
+            本轮未出现 BASIC，因此这些剩余干员不会自动派遣；你可以自由分配/留空。
+          </div>
+          <div class="hr"></div>
+          <div class="mono" style="white-space:pre-wrap;word-break:break-word">${remainingList.join(", ") || "（无剩余干员）"}</div>
+        </details>`;
+    } else {
+      // 有 BASIC 时，剩余即 BASIC 列表，已经显示在表格 + 可展开详情里也行
+      extraOut.innerHTML = `
+        <details>
+          <summary>BASIC 详情：剩余全员（共 ${basicList.length}）</summary>
+          <div class="small" style="margin-top:8px">
+            BASIC 不在表格里：默认所有干员贡献较高，因此最后把剩余干员全部塞入 BASIC。
+          </div>
+          <div class="hr"></div>
+          <div class="mono" style="white-space:pre-wrap;word-break:break-word">${basicList.join(", ") || "（没有剩余干员）"}</div>
+        </details>`;
+    }
+
+    const chosenTasksText = tasks.map(x => `${x.priority}:${x.task}`).join("  ") + (hasBasic ? "  BASIC" : "");
+    debug.innerHTML = `
+      <div class="small">
+        本轮任务顺序（处理顺序）：<span class="mono">${chosenTasksText || "—"}</span><br/>
+        已被占用干员：<span class="mono">${used.size}</span> 人；剩余：<span class="mono">${remainingList.length}</span> 人
+      </div>`;
+  }
+
+  // ===== 复制结果（包含：无 BASIC 时也附上剩余干员） =====
+  function buildCopyText(){
+    const {results, hasBasic, basicList, remainingList} = compute();
+    const lines = [];
+    lines.push("【部落任务派遣结果（整列去重，7→1）】");
+    for(const r of results){
+      lines.push(`优先级${r.priority}\t${r.task}\t(${r.finalList.length})`);
+      lines.push(r.finalList.length ? "  " + r.finalList.join(", ") : "  （空）");
+    }
+    if(hasBasic){
+      lines.push("");
+      lines.push(`【BASIC（剩余全员）】(${basicList.length})`);
+      lines.push(basicList.length ? "  " + basicList.join(", ") : "  （空）");
+    }else{
+      lines.push("");
+      lines.push(`【剩余干员（未被占用）】(${remainingList.length})`);
+      lines.push(remainingList.length ? "  " + remainingList.join(", ") : "  （空）");
+    }
+    lines.push("");
+    lines.push("制作人：༺杀༻China NO.1阿鸡 以及 ༺杀༻DirtyFlynn");
+    return lines.join("\n");
+  }
+
+  async function copy(){
+    try{
+      await navigator.clipboard.writeText(buildCopyText());
+      alert("已复制到剪贴板");
+    }catch(e){
+      const ta = document.createElement("textarea");
+      ta.value = buildCopyText();
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      alert("已复制到剪贴板（fallback）");
+    }
+  }
+
+  // ===== 状态保存（本地） =====
+  const KEY = "tribe_helper_state_v4";
+  function saveState(){
+    const state = {
+      roster: document.getElementById("roster").value,
+      slots: Object.fromEntries(Array.from({length:7},(_,i)=>{
+        const p = 7-i;
+        return [p, document.getElementById(`slot_${p}`).value];
+      }))
+    };
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }
+  function loadState(){
+    const raw = localStorage.getItem(KEY);
+    if(!raw) return;
+    try{
+      const s = JSON.parse(raw);
+      if(typeof s.roster === "string") document.getElementById("roster").value = s.roster;
+      if(s.slots){
+        for(let p=7;p>=1;p--){
+          const v = s.slots[p];
+          if(typeof v === "string") document.getElementById(`slot_${p}`).value = v;
+        }
+      }
+    }catch(e){}
+  }
+
+  // ===== 事件绑定 =====
+  document.getElementById("run").addEventListener("click", ()=>{ render(); saveState(); });
+  document.getElementById("clear").addEventListener("click", ()=>{
+    for(let p=7;p>=1;p--) document.getElementById(`slot_${p}`).value = "";
+    syncNoDuplicate(); render();
+  });
+  document.getElementById("useDefault").addEventListener("click", ()=>{
+    document.getElementById("roster").value = "";
+    saveState(); render();
+  });
+  document.getElementById("fillDefault").addEventListener("click", ()=>{
+    document.getElementById("roster").value = DEFAULT_ROSTER.join("\n");
+    saveState(); render();
+  });
+  document.getElementById("roster").addEventListener("input", ()=>{ saveState(); });
+  document.getElementById("copy").addEventListener("click", copy);
+
+  // 初始化
+  renderSlots();
+  loadState();
+  syncNoDuplicate();
+  render();
+</script>
+</body>
+</html>
