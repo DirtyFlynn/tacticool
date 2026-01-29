@@ -66,9 +66,9 @@
 <div class="wrap">
   <h1>部落任务派遣助手——制作人༺杀༻China NO.1阿鸡 ༺杀༻DirtyFlynn</h1>
   <p class="sub">
-    规则：每个任务的“推荐干员”就是你给的表格那一整列（从上到下）。按优先级 <b>7→1</b> 依次处理：<br/>
-    - 高优先任务先拿走整列（若你自定义了“拥有干员”，则只取你拥有的那部分）<br/>
-    - 低优先任务从自己的整列中 <b>删除已被更高优先占用的人</b>，剩下的人才派遣<br/>
+    规则：每个任务的“推荐干员”就是你给的表格那一整列（从上到下）。按任务 <b>7→1</b> 依次处理：<br/>
+    - 高任务先拿走整列（若你自定义了“拥有干员”，则只取你拥有的那部分）<br/>
+    - 低任务从自己的整列中 <b>删除已被更高任务占用的人</b>，剩下的人才派遣<br/>
     - 只要本轮包含 <span class="tag mono">BASIC</span>：它永远显示在最下面，并把 <b>剩余全员</b> 全塞进 BASIC
   </p>
 
@@ -78,12 +78,13 @@
       <h2>① 你的干员池（可选）</h2>
       <p class="small">
         不填＝默认你拥有表格里出现过的所有干员。<br/>
-        需要精确到“你实际拥有的干员”时，每行一个名字（大小写无所谓，会自动转大写；例如：<span class="mono">CHEN LI</span>）
+        你可以输入英文或中文（脚本会自动识别并去重）。例如：<span class="mono">TRAVIS</span> 或 <span class="mono">特拉维斯</span>
       </p>
       <textarea id="roster" placeholder="（可留空）每行一个干员名，例如：
 TRAVIS
-BORIS
+特拉维斯
 CHEN LI
+陈丽
 ..."></textarea>
       <div class="row" style="margin-top:10px">
         <button class="btn secondary" id="useDefault">使用默认全员（清空自定义）</button>
@@ -125,7 +126,72 @@ CHEN LI
     "COMMON","UNCOMMON","RARE ONLY","BAYONET","HAMMER","KNIFE","BASIC"
   ];
 
+  // ===== 干员中文映射（英文ID -> 中文显示）=====
+  // 内部逻辑始终用英文ID去重/占用；显示与复制时才转成中文
+  const NAME_ZH = {
+    "TRAVIS":"特拉维斯",
+    "BORIS":"鲍里斯",
+    "LENS":"莱斯",
+    "VICTOR":"维克托",
+    "RICK":"瑞克",
+    "MISHKA":"米什卡",
+    "JASON":"杰森",
+    "BATYA":"巴蒂亚",
+    "SYNDROME":"歪脸",
+    "KALUS":"克劳斯",
+    "SHI":"史",
+    "THOR":"托尔",
+    "VARG":"瓦格",
+    "ROOKIE":"菜鸟",
+    "CAPISCE":"凯普斯",
+    "SPENCER":"斯宾塞",
+    "JOE":"乔",
+    "DAVID":"大卫",
+    "VALERA":"瓦莱拉",
+    "OWEN":"欧文",
+    "HAWK":"霍克",
+    "MCMEAN":"麦克米恩",
+    "ZLOY":"祖洛伊",
+    "WHISPER":"低语者",
+    "MIA":"米娅",
+    "MIRO":"米罗",
+    "DMITRY":"德米特里",
+    "DIANA":"戴安娜",
+    "RAY":"雷",
+    "CHEN LI":"陈丽",
+    "CRAIG":"克雷格",
+    "KIRIN":"麒麟",
+    "MOSES":"摩西",
+    "SNEK":"蛇",
+    "APOLLON":"阿波罗",
+    "DUTCH":"达奇",
+    "CHARON":"卡戎",
+    "PHOENIX":"菲尼克斯",
+    "JB":"JB",
+    "FERRY":"费里"
+  };
+
+  function fmtName(id){
+    return NAME_ZH[id] || id;
+  }
+
+  // 反向映射：允许 roster 直接输入中文
+  const ZH_TO_ID = (() => {
+    const m = new Map();
+    for (const [id, zh] of Object.entries(NAME_ZH)) {
+      if (zh) m.set(String(zh).trim(), id);
+    }
+    return m;
+  })();
+
+  function normalizeInputName(s){
+    const raw = String(s).trim().replace(/\s+/g, " ");
+    const byZh = ZH_TO_ID.get(raw);
+    return (byZh ? byZh : raw).toUpperCase().replace(/\s+/g, " ").trim();
+  }
+
   // ===== 你的表格：每任务对应“整列推荐干员”（按上到下顺序）=====
+  // ✅ 已确保：只有 CRAIG，没有 CARIG
   const PREF = {
     "RECON":      ["TRAVIS","KALUS","SPENCER","HAWK","MIA","RAY","SNEK","APOLLON","WHISPER","CHARON"],
     "LOGISTICS":  ["BORIS","SHI","VICTOR","JASON","MIRO","CHEN LI","APOLLON","PHOENIX","FERRY"],
@@ -213,7 +279,7 @@ CHEN LI
     const uniq = [];
     const seen = new Set();
     for(const line of lines){
-      const name = line.toUpperCase().replace(/\s+/g," ").trim();
+      const name = normalizeInputName(line);
       if(!name) continue;
       if(!seen.has(name)){
         seen.add(name);
@@ -235,8 +301,12 @@ CHEN LI
       if(t) picked.push({priority:p, task:t});
     }
 
-    // BASIC 处理：永远最后（显示/处理都最后）
-    const hasBasic = picked.some(x=>x.task==="BASIC");
+    // BASIC：记录它原本是“任务几”
+    const basicPick = picked.find(x=>x.task==="BASIC") || null;
+    const hasBasic = !!basicPick;
+    const basicTaskNo = hasBasic ? basicPick.priority : null;
+
+    // 非 BASIC：按任务号从大到小处理
     const tasks = picked
       .filter(x=>x.task!=="BASIC")
       .sort((a,b)=>b.priority-a.priority);
@@ -244,7 +314,6 @@ CHEN LI
     const used = new Set();
     const results = [];
 
-    // 非 BASIC 依次占用整列
     for(const item of tasks){
       const t = item.task;
       const col = (PREF[t] || []).filter(name => rosterSet.has(name));
@@ -252,24 +321,25 @@ CHEN LI
       finalList.forEach(x => used.add(x));
 
       results.push({
-        priority: item.priority,
+        priority: item.priority,   // 这里的 priority 就是“任务几”
         task: t,
         finalList
       });
     }
 
-    // 剩余全员（无论是否有 BASIC 都计算出来）
     const remainingList = roster.filter(n => !used.has(n));
-
-    // BASIC：如果本轮有 BASIC，则最终派遣 = 剩余全员
     const basicList = hasBasic ? remainingList.slice() : [];
 
-    return {results, hasBasic, basicList, remainingList, roster, used, tasks};
+    return {
+      results, hasBasic, basicTaskNo,
+      basicList, remainingList,
+      roster, used, tasks
+    };
   }
 
   // ===== 渲染 =====
   function render(){
-    const {results, hasBasic, basicList, remainingList, roster, used, tasks} = compute();
+    const {results, hasBasic, basicTaskNo, basicList, remainingList, roster, used, tasks} = compute();
 
     const out = document.getElementById("out");
     const extraOut = document.getElementById("extraOut");
@@ -281,8 +351,8 @@ CHEN LI
 
     let html = `<table>
       <thead><tr>
-        <th style="width:90px">优先级</th>
-        <th style="width:160px">任务</th>
+        <th style="width:90px">任务</th>
+        <th style="width:160px">任务类型</th>
         <th>最终派遣名单（整列去重后）</th>
         <th style="width:120px">人数</th>
       </tr></thead><tbody>`;
@@ -291,21 +361,21 @@ CHEN LI
       html += `<tr><td colspan="4" class="small">还没有选择任务。左侧选好本轮 7 个任务后点「生成派遣名单」。</td></tr>`;
     } else {
       for(const r of results){
-        const listStr = r.finalList.length ? r.finalList.join(", ") : "（被更高优先抢光 / 或你不拥有该列干员）";
+        const listStr = r.finalList.length ? r.finalList.map(fmtName).join(", ") : "（被更高任务抢光 / 或你不拥有该列干员）";
         html += `<tr>
-          <td class="mono"><span class="tag">${r.priority}</span></td>
+          <td class="mono"><span class="tag">任务${r.priority}</span></td>
           <td class="mono">${r.task}</td>
           <td class="mono">${listStr}</td>
           <td class="mono ${r.finalList.length? "ok":"warn"}">${r.finalList.length}</td>
         </tr>`;
       }
 
-      // ✅ 改动 1：只要选了 BASIC，永远放在表格最后一行显示
+      // BASIC 永远放在表格最后一行显示（但保留它原本的任务号）
       if(hasBasic){
         html += `<tr>
-          <td class="mono"><span class="tag">BASIC</span></td>
-          <td class="mono">BASIC</td>
-          <td class="mono">${basicList.length ? basicList.join(", ") : "（没有剩余干员）"}</td>
+          <td class="mono"><span class="tag">任务${basicTaskNo}</span></td>
+          <td class="mono">BASIC（剩余全员）</td>
+          <td class="mono">${basicList.length ? basicList.map(fmtName).join(", ") : "（没有剩余干员）"}</td>
           <td class="mono ${basicList.length? "ok":"warn"}">${basicList.length}</td>
         </tr>`;
       }
@@ -314,7 +384,6 @@ CHEN LI
     html += `</tbody></table>`;
     out.innerHTML = html;
 
-    // ✅ 改动 2：当没有 BASIC 时，也显示“剩余干员是谁”
     if(!hasBasic){
       extraOut.innerHTML = `
         <details>
@@ -323,22 +392,21 @@ CHEN LI
             本轮未出现 BASIC，因此这些剩余干员不会自动派遣；你可以自由分配/留空。
           </div>
           <div class="hr"></div>
-          <div class="mono" style="white-space:pre-wrap;word-break:break-word">${remainingList.join(", ") || "（无剩余干员）"}</div>
+          <div class="mono" style="white-space:pre-wrap;word-break:break-word">${remainingList.map(fmtName).join(", ") || "（无剩余干员）"}</div>
         </details>`;
     } else {
-      // 有 BASIC 时，剩余即 BASIC 列表，已经显示在表格 + 可展开详情里也行
       extraOut.innerHTML = `
         <details>
-          <summary>BASIC 详情：剩余全员（共 ${basicList.length}）</summary>
+          <summary>任务${basicTaskNo} BASIC（剩余全员）详情：共 ${basicList.length} 人</summary>
           <div class="small" style="margin-top:8px">
             BASIC 不在表格里：默认所有干员贡献较高，因此最后把剩余干员全部塞入 BASIC。
           </div>
           <div class="hr"></div>
-          <div class="mono" style="white-space:pre-wrap;word-break:break-word">${basicList.join(", ") || "（没有剩余干员）"}</div>
+          <div class="mono" style="white-space:pre-wrap;word-break:break-word">${basicList.map(fmtName).join(", ") || "（没有剩余干员）"}</div>
         </details>`;
     }
 
-    const chosenTasksText = tasks.map(x => `${x.priority}:${x.task}`).join("  ") + (hasBasic ? "  BASIC" : "");
+    const chosenTasksText = tasks.map(x => `任务${x.priority}:${x.task}`).join("  ") + (hasBasic ? `  任务${basicTaskNo}:BASIC` : "");
     debug.innerHTML = `
       <div class="small">
         本轮任务顺序（处理顺序）：<span class="mono">${chosenTasksText || "—"}</span><br/>
@@ -346,26 +414,29 @@ CHEN LI
       </div>`;
   }
 
-  // ===== 复制结果（包含：无 BASIC 时也附上剩余干员） =====
+  // ===== 复制结果：按“任务X”显示；BASIC 显示为“任务X BASIC（剩余全员）” =====
   function buildCopyText(){
-    const {results, hasBasic, basicList, remainingList} = compute();
+    const {results, hasBasic, basicTaskNo, basicList, remainingList} = compute();
     const lines = [];
-    lines.push("【部落任务派遣结果（整列去重，7→1）】");
+    lines.push("【部落任务派遣结果】");
+
     for(const r of results){
-      lines.push(`优先级${r.priority}\t${r.task}\t(${r.finalList.length})`);
-      lines.push(r.finalList.length ? "  " + r.finalList.join(", ") : "  （空）");
+      lines.push(`任务${r.priority}\t${r.task}\t(${r.finalList.length})`);
+      lines.push(r.finalList.length ? "  " + r.finalList.map(fmtName).join(", ") : "  （空）");
     }
+
     if(hasBasic){
       lines.push("");
-      lines.push(`【BASIC（剩余全员）】(${basicList.length})`);
-      lines.push(basicList.length ? "  " + basicList.join(", ") : "  （空）");
-    }else{
+      lines.push(`任务${basicTaskNo}\tBASIC（剩余全员）\t(${basicList.length})`);
+      lines.push(basicList.length ? "  " + basicList.map(fmtName).join(", ") : "  （空）");
+    } else {
       lines.push("");
       lines.push(`【剩余干员（未被占用）】(${remainingList.length})`);
-      lines.push(remainingList.length ? "  " + remainingList.join(", ") : "  （空）");
+      lines.push(remainingList.length ? "  " + remainingList.map(fmtName).join(", ") : "  （空）");
     }
+
     lines.push("");
-    lines.push("制作人：༺杀༻China NO.1阿鸡 以及 ༺杀༻DirtyFlynn");
+    lines.push("制作人：༺杀༻China NO.1阿鸡  ༺杀༻DirtyFlynn");
     return lines.join("\n");
   }
 
@@ -385,7 +456,7 @@ CHEN LI
   }
 
   // ===== 状态保存（本地） =====
-  const KEY = "tribe_helper_state_v4";
+  const KEY = "tribe_helper_state_v6_task_basicno_zh";
   function saveState(){
     const state = {
       roster: document.getElementById("roster").value,
